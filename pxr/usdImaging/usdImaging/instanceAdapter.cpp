@@ -26,6 +26,7 @@
 #include "pxr/usdImaging/usdImaging/delegate.h"
 #include "pxr/usdImaging/usdImaging/indexProxy.h"
 #include "pxr/usdImaging/usdImaging/instancerContext.h"
+#include "pxr/usdImaging/usdImaging/primvarUtils.h"
 #include "pxr/usdImaging/usdImaging/tokens.h"
 
 #include "pxr/imaging/hd/basisCurves.h"
@@ -361,23 +362,21 @@ UsdImagingInstanceAdapter::_Populate(UsdPrim const& prim,
         // edits to the proto root).
         index->AddDependency(instancerPath, instancerPrim.GetPrototype());
 
-        // Mark this instancer as having a TrackVariability queued, since
-        // we automatically queue it in InsertInstancer.
-        instancerData.refreshVariability = true;
+        // Mark this instancer as having TrackVariability/UpdateForTime queued,
+        // since we automatically queue them in InsertInstancer.
+        instancerData.refresh = true;
     }
 
-    // Add an entry to the instancer data for the given instance. Keep
-    // the vector sorted for faster lookups during change processing.
-    std::vector<SdfPath>& instancePaths = instancerData.instancePaths;
-    std::vector<SdfPath>::iterator it = std::lower_bound(
-        instancePaths.begin(), instancePaths.end(), instancePath);
+    // Add an entry to the instancer data for the given instance.
+    SdfPathSet& instancePaths = instancerData.instancePaths;
+    SdfPathSet::iterator it = instancePaths.find(instancePath);
 
     // We may repopulate instances we've already seen during change
     // processing when nested instances are involved. Rather than do
     // some complicated filtering in ProcessPrimResync to avoid this,
     // we just silently ignore duplicate instances here.
     if (it == instancePaths.end() || *it != instancePath) {
-        instancePaths.insert(it, instancePath);
+        instancePaths.insert(instancePath);
 
         TF_DEBUG(USDIMAGING_INSTANCER).Msg(
             "[Add Instance NI] <%s>  %s\n",
@@ -454,15 +453,15 @@ UsdImagingInstanceAdapter::_Populate(UsdPrim const& prim,
                 index->AddDependency(depInstancerPath, prim);
             }
 
-            // Ask hydra to do a full refresh on this instancer.
             index->MarkInstancerDirty(depInstancerPath,
                     HdChangeTracker::DirtyPrimvar |
                     HdChangeTracker::DirtyInstanceIndex);
 
-            // Tell UsdImaging to re-run TrackVariability.
-            if (!depInstancerData.refreshVariability) {
-                depInstancerData.refreshVariability = true;
-                index->Refresh(depInstancerPath);
+            // Ask hydra to do a full refresh on this instancer.
+            if (!depInstancerData.refresh) {
+                depInstancerData.refresh = true;
+                index->RequestTrackVariability(depInstancerPath);
+                index->RequestUpdateForTime(depInstancerPath);
             }
         }
 
@@ -570,7 +569,9 @@ UsdImagingInstanceAdapter::TrackVariability(UsdPrim const& prim,
             *timeVaryingBits |= HdChangeTracker::DirtyInstanceIndex;
         }
 
-        instrData->refreshVariability = false;
+        // We can clear the "refresh" bit here since by the time
+        // TrackVariability is run, we're done populating new instances.
+        instrData->refresh = false;
     }
 }
 
@@ -1255,7 +1256,7 @@ UsdImagingInstanceAdapter::UpdateForTime(UsdPrim const& prim,
                                              &val, time)) {
                     _MergePrimvar(&primvarDescCache->GetPrimvars(cachePath),
                                   ipv.name, HdInterpolationInstance,
-                                  _UsdToHdRole(ipv.type.GetRole()));
+                                  UsdImagingUsdToHdRole(ipv.type.GetRole()));
                 }
             }
         }
@@ -1404,6 +1405,12 @@ UsdImagingInstanceAdapter::MarkDirty(UsdPrim const& prim,
         }
     } else if (TfMapLookupPtr(_instancerData, prim.GetPath()) != nullptr) {
         index->MarkInstancerDirty(cachePath, dirty);
+        // Note that if any primvars have changed, we need to re-run
+        // UpdateForTime. Value clips mean that frame changes can change the
+        // primvar set.
+        if (dirty & HdChangeTracker::DirtyPrimvar) {
+            index->RequestUpdateForTime(cachePath);
+        }
     }
 }
 
@@ -1534,21 +1541,62 @@ UsdImagingInstanceAdapter::MarkVisibilityDirty(UsdPrim const& prim,
     }
 }
 
+struct UsdImagingInstanceAdapter::_GetInstanceCategoriesFn
+{
+    _GetInstanceCategoriesFn(
+        const UsdImagingInstanceAdapter* adapter,
+        const UsdImaging_CollectionCache* cc, 
+        std::vector<VtTokenArray>* result) : 
+        _adapter(adapter),
+        _cc(cc),
+        _result(result)
+    { }
+
+    void Initialize(size_t numInstances)
+    { 
+        _result->resize(numInstances);
+    }
+
+    bool operator()(const std::vector<UsdPrim>& ctx, size_t idx)
+    {
+        // We must query the collections cache using the instance's stage path, 
+        // not its proxy path. _GetStagePath() reconstructs the stage path
+        // from the instancing context.)
+        const SdfPath& path = _GetStagePath(ctx);
+        if (path.IsEmpty()) {
+            return false;
+        }
+        _result->at(idx) = _cc->ComputeCollectionsContainingPath(path);
+        return true;
+    }
+
+    SdfPath _GetStagePath(const std::vector<UsdPrim>& ctx)
+    {
+        SdfPathVector chain;
+        chain.reserve(ctx.size());
+        for (const UsdPrim& prim : ctx) {
+            chain.push_back(prim.GetPath());
+        }
+        return _adapter->_GetPrimPathFromInstancerChain(chain);
+    }
+
+    const UsdImagingInstanceAdapter* _adapter;
+    const UsdImaging_CollectionCache* _cc;
+    std::vector<VtTokenArray>* _result;
+};
+
 /*virtual*/
 std::vector<VtArray<TfToken>>
 UsdImagingInstanceAdapter::GetInstanceCategories(UsdPrim const& prim) 
 {
     HD_TRACE_FUNCTION();
-    std::vector<VtArray<TfToken>> categories;
-    if (const _InstancerData* instancerData = 
-        TfMapLookupPtr(_instancerData, prim.GetPath())) {
-        UsdImaging_CollectionCache& cc = _GetCollectionCache();
-        categories.reserve(instancerData->instancePaths.size());
-        for (SdfPath const& p: instancerData->instancePaths) {
-            categories.push_back(cc.ComputeCollectionsContainingPath(p));
-        }
+    std::vector<VtTokenArray> result;
+    if (TfMapLookupPtr(_instancerData, prim.GetPath())) {
+        const UsdImaging_CollectionCache& cc = _GetCollectionCache();
+        _GetInstanceCategoriesFn catsFn(this, &cc, &result);
+        _RunForAllInstancesToDraw(prim, &catsFn);
     }
-    return categories;
+    return result;
 }
 
 /*virtual*/
@@ -2111,8 +2159,10 @@ UsdImagingInstanceAdapter::_ResyncInstancer(SdfPath const& instancerPath,
         index->RemoveInstancer(instancerPath);
     }
 
-    // Keep a copy of the instancer's instances so we can repopulate them below.
-    const SdfPathVector instancePaths = instIt->second.instancePaths;
+    // Swap out the instancepPaths. They're going to be deleted anyways.
+    SdfPathSet instancePaths;
+    std::swap(instancePaths, instIt->second.instancePaths);
+    
 
     // Remove local instancer data.
     _instancerData.erase(instIt);
@@ -2617,7 +2667,7 @@ UsdImagingInstanceAdapter::GetScenePrimPaths(
 
             // set bits for all requested indices to true
             for (size_t i = 0; i < instanceIndices.size(); i++) {
-                requestedIndicesMap[instanceIndices[i]] = i;
+                requestedIndicesMap[instanceIndices[i] - minIdx] = i;
             }
 
             result.resize(instanceIndices.size());

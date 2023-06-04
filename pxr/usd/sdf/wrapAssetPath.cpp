@@ -74,11 +74,19 @@ static bool _Nonzero(SdfAssetPath const &self)
 
 static size_t _Hash(SdfAssetPath const &self)
 {
-    size_t hash = 0;
-    boost::hash_combine(hash, self.GetAssetPath());
-    boost::hash_combine(hash, self.GetResolvedPath());
-    return hash;
+    return self.GetHash();
 }
+
+static std::string
+GetAssetPath(SdfAssetPath const &ap) {
+    return ap.GetAssetPath();
+}
+
+static std::string
+GetResolvedPath(SdfAssetPath const &ap) {
+    return ap.GetResolvedPath();
+}
+
 
 } // anonymous namespace 
 
@@ -91,21 +99,15 @@ void wrapAssetPath()
         .def(init<const std::string &, const std::string &>())
 
         .def("__repr__", _Repr)
-        .def(TfPyBoolBuiltinFuncName, _Nonzero)
+        .def("__bool__", _Nonzero)
         .def("__hash__", _Hash)
 
         .def( self == self )
         .def( self != self )
-//        .def( str(self) )
         .def("__str__", _Str)
 
-        .add_property("path", 
-                      make_function(&This::GetAssetPath,
-                                    return_value_policy<return_by_value>()))
-
-        .add_property("resolvedPath",
-                      make_function(&This::GetResolvedPath,
-                                    return_value_policy<return_by_value>()))
+        .add_property("path", GetAssetPath)
+        .add_property("resolvedPath", GetResolvedPath)
         ;
 
     implicitly_convertible<std::string, This>();

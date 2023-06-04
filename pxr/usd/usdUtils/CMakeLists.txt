@@ -9,6 +9,7 @@ pxr_library(usdUtils
         sdf
         usd
         usdGeom
+        usdShade
         ${Boost_PYTHON_LIBRARY}
 
     INCLUDE_DIRS
@@ -56,7 +57,10 @@ pxr_library(usdUtils
         __init__.py
         complianceChecker.py
         constantsGroup.py
+        fixBrokenPixarSchemas.py
+        toolPaths.py
         updateSchemaWithSdrNode.py
+        usdzUtils.py
 
     DOXYGEN_FILES
         overview.dox
@@ -80,6 +84,7 @@ pxr_test_scripts(
     testenv/testUsdUtilsStitchClips.py
     testenv/testUsdUtilsTimeCodeRange.py
     testenv/testUsdUtilsUpdateSchemaWithSdrNode.py
+    testenv/testUsdUtilsUsdzUtils.py
     testenv/testUsdUtilsVarSelsSessionLayer.py
 )
 
@@ -196,6 +201,11 @@ pxr_install_test_dir(
 pxr_install_test_dir(
     SRC testenv/testUsdUtilsUpdateSchemaWithSdrNode
     DEST testUsdUtilsUpdateSchemaWithSdrNodeError
+)
+
+pxr_install_test_dir(
+    SRC testenv/testUsdUtilsUsdzUtils
+    DEST testUsdUtilsUsdzUtils
 )
 
 pxr_register_test(testUsdUtilsAuthoring
@@ -438,7 +448,7 @@ pxr_register_test(testUsdUtilsIntrospection
 pxr_register_test(testUsdUtilsModifyAssetPaths
     PYTHON
     COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testUsdUtilsModifyAssetPaths layer.usda modified.usda"
-    DIFF_COMPARE modified.usda
+    DIFF_COMPARE modified.usda duplicates.usda removal.usda
     EXPECTED_RETURN_CODE 0
 )
 
@@ -513,5 +523,11 @@ pxr_register_test(testUsdUtilsTimeCodeRangeCpp
 pxr_register_test(testUsdUtilsVarSelsSessionLayer
     PYTHON
     COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testUsdUtilsVarSelsSessionLayer"
+    EXPECTED_RETURN_CODE 0
+)
+
+pxr_register_test(testUsdUtilsUsdzUtils
+    PYTHON
+    COMMAND "${CMAKE_INSTALL_PREFIX}/tests/testUsdUtilsUsdzUtils"
     EXPECTED_RETURN_CODE 0
 )

@@ -7,7 +7,9 @@ def Scope "World"
 {
     float xyz = 123
 
-    def Cube "GroundPlane"
+    def Cube "GroundPlane" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
     {
         rel material:binding = </Material/Grid>
         double xformOp:rotateY = -90
@@ -15,7 +17,9 @@ def Scope "World"
         token[] xformOpOrder = ["xformOp:scale", "xformOp:rotateY"]
     }
 
-    def Cube "Cube"
+    def Cube "Cube" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
     {
         rel material:binding = </Material/Red>
         color3f[] primvars:displayColor = [(0.8763, 0.2168, 0.2168)]
@@ -24,7 +28,9 @@ def Scope "World"
         token[] xformOpOrder = ["xformOp:translate"]
     }
 
-    def Cone "Cone"
+    def Cone "Cone" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
     {
         token axis = "Y"
         double height = 1.2
@@ -35,35 +41,13 @@ def Scope "World"
         token[] xformOpOrder = ["xformOp:translate"]
     }
 
-    def Sphere "LargeSphere"
+    def Sphere "LargeSphere" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
     {
         rel material:binding = </Material/White>
         double radius = 2
         double3 xformOp:translate = (0, 2, 0)
-        token[] xformOpOrder = ["xformOp:translate"]
-    }
-
-    def Sphere "GlowSphere"
-    {
-        rel material:binding = </Material/Glow>
-        double radius = 0.6
-        double3 xformOp:translate = (3.85, 0.65, -3.85)
-        token[] xformOpOrder = ["xformOp:translate"]
-    }
-
-    def Sphere "DiffuseSphere"
-    {
-        rel material:binding = </Material/Gray>
-        double radius = 0.5
-        double3 xformOp:translate = (-1.5, 0.55, 3.5)
-        token[] xformOpOrder = ["xformOp:translate"]
-    }
-
-    def Sphere "ReflSphere"
-    {
-        rel material:binding = </Material/Chrome>
-        double radius = 0.5
-        double3 xformOp:translate = (1.5, 0.55, 3.5)
         token[] xformOpOrder = ["xformOp:translate"]
     }
 
@@ -148,44 +132,6 @@ def Scope "Material"
         {
             uniform token info:id = "PxrSurface"
             color3f inputs:diffuseColor = (0.0436, 0.1311, 0.3634)
-            token outputs:out
-        }
-    }
-
-    def Material "Glow"
-    {
-        token outputs:surface.connect = </Material/Glow/Surface.outputs:out>
-
-        def Shader "Surface"
-        {
-            uniform token info:id = "PxrSurface"
-            color3f inputs:glowColor = (0.9896, 0.5945, 0.2092)
-            float inputs:glowGain = 6
-            token outputs:out
-        }
-    }
-
-    def Material "Gray"
-    {
-        token outputs:surface.connect = </Material/Gray/Surface.outputs:out>
-
-        def Shader "Surface"
-        {
-            uniform token info:id = "PxrSurface"
-            token outputs:out
-        }
-    }
-
-    def Material "Chrome"
-    {
-        token outputs:surface.connect = </Material/Chrome/Surface.outputs:out>
-
-        def Shader "Surface"
-        {
-            uniform token info:id = "PxrSurface"
-            color3f inputs:specularEdgeColor = (1, 1, 1)
-            color3f inputs:specularFaceColor = (1, 1, 1)
-            float inputs:specularRoughness = 0.1
             token outputs:out
         }
     }

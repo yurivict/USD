@@ -63,6 +63,13 @@ _CreateTestAttrTwoAttr(UsdContrivedPublicMultipleApplyAPI &self,
     return self.CreateTestAttrTwoAttr(
         UsdPythonToSdfType(defaultVal, SdfValueTypeNames->Double), writeSparsely);
 }
+        
+static UsdAttribute
+_CreatePublicAPIAttr(UsdContrivedPublicMultipleApplyAPI &self,
+                                      object defaultVal, bool writeSparsely) {
+    return self.CreatePublicAPIAttr(
+        UsdPythonToSdfType(defaultVal, SdfValueTypeNames->Opaque), writeSparsely);
+}
 
 static bool _WrapIsPublicMultipleApplyAPIPath(const SdfPath &path) {
     TfToken collectionName;
@@ -124,6 +131,13 @@ void wrapUsdContrivedPublicMultipleApplyAPI()
             (arg("prim"), arg("name")))
         .staticmethod("Get")
 
+        .def("GetAll",
+            (std::vector<UsdContrivedPublicMultipleApplyAPI>(*)(const UsdPrim &prim))
+                &This::GetAll,
+            arg("prim"),
+            return_value_policy<TfPySequenceToList>())
+        .staticmethod("GetAll")
+
         .def("CanApply", &_WrapCanApply, (arg("prim"), arg("name")))
         .staticmethod("CanApply")
 
@@ -160,6 +174,13 @@ void wrapUsdContrivedPublicMultipleApplyAPI()
              &This::GetTestAttrTwoAttr)
         .def("CreateTestAttrTwoAttr",
              &_CreateTestAttrTwoAttr,
+             (arg("defaultValue")=object(),
+              arg("writeSparsely")=false))
+        
+        .def("GetPublicAPIAttr",
+             &This::GetPublicAPIAttr)
+        .def("CreatePublicAPIAttr",
+             &_CreatePublicAPIAttr,
              (arg("defaultValue")=object(),
               arg("writeSparsely")=false))
 

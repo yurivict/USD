@@ -123,6 +123,10 @@ TF_DEFINE_PRIVATE_TOKENS(
     ((mainTrianglePTVS,            "Mesh.PostTessVertex.Triangle"))
     ((mainQuadPTVS,                "Mesh.PostTessVertex.Quad"))
     ((mainTriQuadPTVS,             "Mesh.PostTessVertex.TriQuad"))
+    ((mainBSplineQuadPTCS,         "Mesh.PostTessControl.BSplineQuad"))
+    ((mainBSplineQuadPTVS,         "Mesh.PostTessVertex.BSplineQuad"))
+    ((mainBoxSplineTrianglePTCS,   "Mesh.PostTessControl.BoxSplineTriangle"))
+    ((mainBoxSplineTrianglePTVS,   "Mesh.PostTessVertex.BoxSplineTriangle"))
     ((mainVaryingInterpPTVS,       "Mesh.PostTessVertex.VaryingInterpolation"))
     ((mainTriangleTessGS,          "Mesh.Geometry.TriangleTess"))
     ((mainTriangleGS,              "Mesh.Geometry.Triangle"))
@@ -141,6 +145,7 @@ TF_DEFINE_PRIVATE_TOKENS(
     ((mainPatchCoordPTVSTriQuad, 
         "Mesh.PostTessellationVertex.PatchCoord.TriQuad"))
     ((mainPatchCoordFS,            "Mesh.Fragment.PatchCoord"))
+    ((mainPatchCoordTessFS,        "Mesh.Fragment.PatchCoord.Tess"))
     ((mainPatchCoordTriangleFS,    "Mesh.Fragment.PatchCoord.Triangle"))
     ((mainPatchCoordQuadFS,        "Mesh.Fragment.PatchCoord.Quad"))
     ((mainPatchCoordTriQuadFS,     "Mesh.Fragment.PatchCoord.TriQuad"))
@@ -227,6 +232,10 @@ HdSt_MeshShaderKey::HdSt_MeshShaderKey(
     const bool renderEdges = geomStyle == HdMeshGeomStyleEdgeOnSurf ||
                              geomStyle == HdMeshGeomStyleHullEdgeOnSurf;
 
+    // Selected edges can be highlighted even if not otherwise displayed
+    const bool renderSelectedEdges = geomStyle == HdMeshGeomStyleSurf ||
+                                     geomStyle == HdMeshGeomStyleHull;
+
     /* Normals configurations:
      * Smooth normals:
      *   [VS] .Smooth, [PTVS] .Smooth, ([GS] .NoFlat, .Pass), [FS] .Pass
@@ -282,9 +291,21 @@ HdSt_MeshShaderKey::HdSt_MeshShaderKey(
     VS[vsIndex++] = _tokens->mainVS;
     VS[vsIndex] = TfToken();
 
+    // Determine if PTVS should be used for Metal.
+    bool const usePTVSTechniques =
+            isPrimTypePatches ||
+            hasCustomDisplacement ||
+            ptvsSceneNormals ||
+            ptvsGeometricNormals ||
+            !hasBuiltinBarycentrics;
+
+    // Determine if using actually using Metal PTVS.
     useMetalTessellation =
-        hasMetalTessellation && !isPrimTypePoints &&
-        (hasCustomDisplacement || ptvsSceneNormals || ptvsGeometricNormals);
+        hasMetalTessellation && !isPrimTypePoints && usePTVSTechniques;
+
+    // PTVS shaders can provide barycentric coords w/o GS.
+    bool const hasFragmentShaderBarycentrics =
+        hasBuiltinBarycentrics || useMetalTessellation;
 
     // post tess vertex shader vertex steps
     uint8_t ptvsIndex = 0;
@@ -332,12 +353,20 @@ HdSt_MeshShaderKey::HdSt_MeshShaderKey(
             PTVS[ptvsIndex++] = _tokens->noCustomDisplacementGS;
         }
 
-        if (isPrimTypePatches || isPrimTypeTris) {
+        if (isPrimTypeTris) {
             PTVS[ptvsIndex++] = _tokens->mainTrianglePTVS;
         } else if (isPrimTypeQuads) {
             PTVS[ptvsIndex++] = _tokens->mainQuadPTVS;
         } else if (isPrimTypeTriQuads) {
             PTVS[ptvsIndex++] = _tokens->mainTriQuadPTVS;
+        } else if (isPrimTypePatchesBSpline) {
+            PTCS[ptcsIndex++] = _tokens->instancing;
+            PTCS[ptcsIndex++] = _tokens->mainBSplineQuadPTCS;
+            PTVS[ptvsIndex++] = _tokens->mainBSplineQuadPTVS;
+        } else if (isPrimTypePatchesBoxSplineTriangle) {
+            PTCS[ptcsIndex++] = _tokens->instancing;
+            PTCS[ptcsIndex++] = _tokens->mainBoxSplineTrianglePTCS;
+            PTVS[ptvsIndex++] = _tokens->mainBoxSplineTrianglePTVS;
         }
         
         if (isPrimTypeTris) {
@@ -422,11 +451,11 @@ HdSt_MeshShaderKey::HdSt_MeshShaderKey(
             && (isPrimTypeTris ||
                 isPrimTypeTriQuads)
             // whether we can skip generating coords for edges
-            && ((!renderWireframe && !renderEdges) ||
-                hasBuiltinBarycentrics)
+            && ((!renderWireframe && !renderEdges && !renderSelectedEdges) ||
+                hasFragmentShaderBarycentrics)
             // whether we can skip generating coords for per-face interpolation
             && (!hasPerFaceInterpolation ||
-                hasBuiltinBarycentrics))
+                hasFragmentShaderBarycentrics))
             ;
             
     if (canSkipGS) {
@@ -474,7 +503,7 @@ HdSt_MeshShaderKey::HdSt_MeshShaderKey(
 
     // Wire (edge) related mixins
     if (renderWireframe || renderEdges) {
-        if (ptvsStageEnabled) {
+        if (!isPrimTypePatches && ptvsStageEnabled) {
             if (isPrimTypeTriQuads) {
                 FS[fsIndex++] = _tokens->edgeCoordPTVSBilinear;
             } else {
@@ -613,6 +642,8 @@ HdSt_MeshShaderKey::HdSt_MeshShaderKey(
         FS[fsIndex++] = _tokens->mainPatchCoordTriQuadFS;
     } else if (isPrimTypeTriQuads && ptvsStageEnabled) {
         FS[fsIndex++] = _tokens->mainPatchCoordTriQuadPTVSFS;
+    } else if (isPrimTypePatches && ptvsStageEnabled) {
+        FS[fsIndex++] = _tokens->mainPatchCoordTessFS;
     } else {
         FS[fsIndex++] = _tokens->mainPatchCoordFS;
     }

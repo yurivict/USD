@@ -43,9 +43,9 @@ function(_copy_headers LIBRARY_NAME)
     set(hpath "${_args_PREFIX}/${LIBRARY_NAME}")
     if ("${CMAKE_CURRENT_SOURCE_DIR}" MATCHES ".*/pxr/.*")
         # Include paths under pxr/ match the source path.
-        file(RELATIVE_PATH hpath "${CMAKE_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}")
+        file(RELATIVE_PATH hpath "${PROJECT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}")
     endif()
-    set(header_dest_dir "${CMAKE_BINARY_DIR}/${PXR_INSTALL_SUBDIR}/include/${hpath}")
+    set(header_dest_dir "${PROJECT_BINARY_DIR}/${PXR_INSTALL_SUBDIR}/include/${hpath}")
     if( NOT "${_args_FILES}" STREQUAL "")
         set(files_copied "")
         foreach (f ${_args_FILES})
@@ -479,8 +479,8 @@ function(_pxr_enable_precompiled_header TARGET_NAME)
 
     # Headers live in subdirectories.
     set(rel_output_header_path "${PXR_PREFIX}/${TARGET_NAME}/${output_header_name}")
-    set(abs_output_header_path "${CMAKE_BINARY_DIR}/include/${rel_output_header_path}")
-    set(abs_precompiled_path ${CMAKE_BINARY_DIR}/include/${PXR_PREFIX}/${TARGET_NAME}/${precompiled_name})
+    set(abs_output_header_path "${PROJECT_BINARY_DIR}/include/${rel_output_header_path}")
+    set(abs_precompiled_path ${PROJECT_BINARY_DIR}/include/${PXR_PREFIX}/${TARGET_NAME}/${precompiled_name})
 
     # Additional compile flags to use precompiled header.  This will be
     set(compile_flags "")
@@ -1022,13 +1022,13 @@ function(_pxr_python_module NAME)
     # Include headers from the build directory.
     get_filename_component(
         PRIVATE_INC_DIR
-        "${CMAKE_BINARY_DIR}/include"
+        "${PROJECT_BINARY_DIR}/include"
         ABSOLUTE
     )
     if (PXR_INSTALL_SUBDIR)
         get_filename_component(
             SUBDIR_INC_DIR
-            "${CMAKE_BINARY_DIR}/${PXR_INSTALL_SUBDIR}/include"
+            "${PROJECT_BINARY_DIR}/${PXR_INSTALL_SUBDIR}/include"
             ABSOLUTE
         )
     endif()
@@ -1291,10 +1291,6 @@ function(_pxr_library NAME)
 
     # PIC is required by shared libraries. It's on for static libraries
     # because we'll likely link them into a shared library.
-    #
-    # We set PUBLIC_HEADER so we install directly from the source tree.
-    # We don't want to install the headers copied to the build tree
-    # because they have #line directives embedded to aid in debugging.
     _get_folder("" folder)
     set_target_properties(${NAME}
         PROPERTIES
@@ -1303,16 +1299,10 @@ function(_pxr_library NAME)
             IMPORT_PREFIX "${args_PREFIX}"            
             PREFIX "${args_PREFIX}"
             SUFFIX "${args_SUFFIX}"
-            PUBLIC_HEADER "${args_PUBLIC_HEADERS}"
     )
 
-    set(pythonEnabled "PXR_PYTHON_ENABLED=1")
-    if(TARGET shared_libs)
-        set(pythonModulesEnabled "PXR_PYTHON_MODULES_ENABLED=1")
-    endif()
     target_compile_definitions(${NAME}
         PUBLIC
-            ${pythonEnabled}
             ${apiPublic}
         PRIVATE
             MFB_PACKAGE_NAME=${PXR_PACKAGE}
@@ -1321,7 +1311,6 @@ function(_pxr_library NAME)
             PXR_BUILD_LOCATION=usd
             PXR_PLUGIN_BUILD_LOCATION=../plugin/usd
             ${pxrInstallLocation}
-            ${pythonModulesEnabled}
             ${apiPrivate}
     )
 
@@ -1337,8 +1326,8 @@ function(_pxr_library NAME)
 
     target_include_directories(${NAME}
         PRIVATE
-            "${CMAKE_BINARY_DIR}/include"
-            "${CMAKE_BINARY_DIR}/${PXR_INSTALL_SUBDIR}/include"
+            "${PROJECT_BINARY_DIR}/include"
+            "${PROJECT_BINARY_DIR}/${PXR_INSTALL_SUBDIR}/include"
         INTERFACE
             $<INSTALL_INTERFACE:${headerInstallDir}>
     )
@@ -1359,7 +1348,7 @@ function(_pxr_library NAME)
     # Doxygen will be run on these files during the install step ---
     # see pxr_build_documentation().
     if(PXR_BUILD_DOCUMENTATION)
-        set(docBuildDir ${CMAKE_BINARY_DIR}/docs/${headerInstallPrefix})
+        set(docBuildDir ${PROJECT_BINARY_DIR}/docs/${headerInstallPrefix})
         set(doxygenFiles "${args_PUBLIC_HEADERS};${args_DOXYGEN_FILES}")
 
         set(files_copied "")
@@ -1407,14 +1396,35 @@ function(_pxr_library NAME)
     # Set up the install.
     #
 
-    if(isObject)
-        get_target_property(install_headers ${NAME} PUBLIC_HEADER)
-        if (install_headers)
+    # Install public headers. 
+    #
+    # This would typically be done via:
+    #
+    # install(TARGETS ... PUBLIC_HEADER DESTINATION ${headerInstallPrefix})
+    #
+    # However, that command does not preserve subdirectory structure, so if a
+    # public header were specified as subdir/header.h, it would just be
+    # installed in ${headerInstallPrefix}/header.h. So we need to roll our own
+    # loop that parses out the subdirectory and manually appends it to the
+    # include directory.
+    if(args_PUBLIC_HEADERS)
+        foreach(header ${args_PUBLIC_HEADERS})
+            set(headerDestination "${headerInstallPrefix}")
+
+            get_filename_component(headerSubdir ${header} DIRECTORY)
+            if (headerSubdir)
+                set(headerDestination "${headerDestination}/${headerSubdir}")
+            endif()
+
             install(
-                FILES ${install_headers}
-                DESTINATION ${headerInstallPrefix}
+                FILES ${header}
+                DESTINATION ${headerDestination}
             )
-        endif()
+        endforeach()
+    endif()
+
+    if(isObject)
+        # Nothing
     else()
         # Do not include plugins libs in externally linkable targets
         if(isPlugin)
@@ -1423,7 +1433,6 @@ function(_pxr_library NAME)
                 LIBRARY DESTINATION ${libInstallPrefix}
                 ARCHIVE DESTINATION ${libInstallPrefix}
                 RUNTIME DESTINATION ${libInstallPrefix}
-                PUBLIC_HEADER DESTINATION ${headerInstallPrefix}
             )
             if(WIN32)
                 install(
@@ -1439,7 +1448,6 @@ function(_pxr_library NAME)
                 LIBRARY DESTINATION ${libInstallPrefix}
                 ARCHIVE DESTINATION ${libInstallPrefix}
                 RUNTIME DESTINATION ${libInstallPrefix}
-                PUBLIC_HEADER DESTINATION ${headerInstallPrefix}
             )
             if(WIN32)
                 install(
@@ -1456,10 +1464,9 @@ function(_pxr_library NAME)
                 LIBRARY DESTINATION ${libInstallPrefix}
                 ARCHIVE DESTINATION ${libInstallPrefix}
                 RUNTIME DESTINATION ${libInstallPrefix}
-                PUBLIC_HEADER DESTINATION ${headerInstallPrefix}
             )
         endif()
-        
+    
         if(NOT isPlugin)
             export(TARGETS ${NAME}
                 APPEND

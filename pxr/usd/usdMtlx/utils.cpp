@@ -242,13 +242,11 @@ _ReadFromAsset(mx::DocumentPtr doc, const ArResolvedPath& resolvedPath,
     std::shared_ptr<const char> buffer;
     size_t bufferSize = 0;
 
-    std::tie(buffer, bufferSize) = [&resolvedPath]() {
-        const std::shared_ptr<ArAsset> asset = 
-            ArGetResolver().OpenAsset(resolvedPath);
-        return asset ?
-            std::make_pair(asset->GetBuffer(), asset->GetSize()) :
-            std::make_pair(std::shared_ptr<const char>(), 0ul);
-    }();
+    if (std::shared_ptr<ArAsset> const asset = 
+                                ArGetResolver().OpenAsset(resolvedPath)) {
+        buffer = asset->GetBuffer();
+        bufferSize = asset->GetSize();
+    }
 
     if (!buffer) {
         TF_RUNTIME_ERROR("Unable to open MaterialX document '%s'",
@@ -351,7 +349,8 @@ UsdMtlxReadDocument(const std::string& resolvedPath)
 mx::ConstDocumentPtr 
 UsdMtlxGetDocumentFromString(const std::string &mtlxXml)
 {
-    std::string hashStr = std::to_string(std::hash<std::string>{}(mtlxXml));
+    const std::string hashStr =
+        std::to_string(std::hash<std::string>{}(mtlxXml));
     // Look up in the cache, inserting a null document if missing.
     auto insertResult = _GetCache().emplace(hashStr, nullptr);
     auto& document = insertResult.first->second;
@@ -371,6 +370,33 @@ UsdMtlxGetDocumentFromString(const std::string &mtlxXml)
     return document;
 }
 
+static void
+_ImportLibraries(const NdrStringVec& searchPaths, mx::Document* document)
+{
+    for (auto&& fileResult : NdrFsHelpersDiscoverFiles(searchPaths,
+                                UsdMtlxStandardFileExtensions(), false)) {
+
+        // Read the file. If this fails due to an exception, a runtime
+        // error will be raised so we can just skip to the next file.
+        auto doc = UsdMtlxReadDocument(fileResult.resolvedUri);
+        if (!doc) {
+            continue;
+        }
+
+        try {
+            // Merge this document into the global library
+            // This properly sets the attributes on the destination 
+            // elements, like source URI and namespace
+            document->importLibrary(doc);
+        }
+        catch (mx::Exception& x) {
+            TF_RUNTIME_ERROR("MaterialX error reading '%s': %s",
+                                fileResult.resolvedUri.c_str(),
+                                x.what());
+        }
+    }
+}
+
 mx::ConstDocumentPtr
 UsdMtlxGetDocument(const std::string& resolvedUri)
 {
@@ -387,32 +413,8 @@ UsdMtlxGetDocument(const std::string& resolvedUri)
     // Read the file or the standard library files.
     if (resolvedUri.empty()) {
         document = mx::createDocument();
-        for (auto&& fileResult:
-                NdrFsHelpersDiscoverFiles(
-                    UsdMtlxStandardLibraryPaths(),
-                    UsdMtlxStandardFileExtensions(),
-                    false)) {
-
-            // Read the file. If this fails due to an exception, a runtime
-            // error will be raised so we can just skip to the next file.
-            auto doc = UsdMtlxReadDocument(fileResult.resolvedUri);
-            if (!doc) {
-                continue;
-            }
-
-            try {
-                
-                // Merge this document into the global library
-                // This properly sets the attributes on the destination 
-                // elements, like source URI and namespace
-                document->importLibrary(doc);
-            }
-            catch (mx::Exception& x) {
-                TF_RUNTIME_ERROR("MaterialX error reading '%s': %s",
-                                 fileResult.resolvedUri.c_str(),
-                                 x.what());
-            }
-        }
+        _ImportLibraries(UsdMtlxStandardLibraryPaths(), document.get());
+        _ImportLibraries(UsdMtlxCustomSearchPaths(), document.get());
     }
     else {
         document = UsdMtlxReadDocument(resolvedUri);
@@ -507,8 +509,8 @@ UsdMtlxGetUsdType(const std::string& mtlxTypeName)
            { "color2",        TUPLEN(Float2,        false, Float, 2)},
            { "color3array",   TUPLE3(Color3fArray,  true,  Color)   },
            { "color3",        TUPLE3(Color3f,       true,  Color)   },
-           { "color4array",   TUPLEX(Color4fArray,  true,  noMatch) },
-           { "color4",        TUPLEN(Color4f,       true,  Float, 4)},
+           { "color4array",   TUPLE3(Color4fArray,  true,  Color4)  },
+           { "color4",        TUPLE3(Color4f,       true,  Color4)  },
            { "filename",      TUPLE3(Asset,         true,  String)  },
            { "floatarray",    TUPLE3(FloatArray,    true,  Float)   },
            { "float",         TUPLE3(Float,         true,  Float)   },
@@ -520,6 +522,7 @@ UsdMtlxGetUsdType(const std::string& mtlxTypeName)
            { "matrix44",      TUPLE3(Matrix4d,      true,  Matrix)  },
            { "stringarray",   TUPLE3(StringArray,   true,  String)  },
            { "string",        TUPLE3(String,        true,  String)  },
+           { "surfaceshader", TUPLE3(Token,         true,  Terminal)},
            { "vector2array",  TUPLEX(Float2Array,   true,  noMatch) },
            { "vector2",       TUPLEN(Float2,        true,  Float, 2)},
            { "vector3array",  TUPLEX(Float3Array,   true,  noMatch) },
@@ -582,7 +585,12 @@ UsdMtlxGetPackedUsdValues(const std::string& values, const std::string& type)
 std::vector<std::string>
 UsdMtlxSplitStringArray(const std::string& s)
 {
-    return mx::splitString(s, mx::ARRAY_VALID_SEPARATORS);
+    static const std::string _CommaSeparator = ",";
+    std::vector<std::string> strs = mx::splitString(s, _CommaSeparator);
+    for (std::string &str : strs) {
+        str = mx::trimSpaces(str);
+    }
+    return strs;
 }
 
 PXR_NAMESPACE_CLOSE_SCOPE

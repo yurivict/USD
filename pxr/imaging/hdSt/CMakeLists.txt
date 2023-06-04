@@ -54,6 +54,7 @@ pxr_library(hdSt
 
     PUBLIC_CLASSES
         basisCurves
+        binding
         bufferArrayRange
         bufferResource
         commandBuffer
@@ -144,9 +145,12 @@ pxr_library(hdSt
         imageShaderShaderKey
         indirectDrawBatch
         materialNetworkShader
+        materialBindingResolvingSceneIndexPlugin
         materialParam
         meshShaderKey
         meshTopology 
+        nodeIdentifierResolvingSceneIndex
+        nodeIdentifierResolvingSceneIndexPlugin
         pipelineDrawBatch
         pointsShaderKey
         quadrangulate
@@ -154,6 +158,7 @@ pxr_library(hdSt
         resourceLayout
         shaderKey
         subdivision
+        terminalsResolvingSceneIndexPlugin
         triangulate
         unitTestHelper
         volumeShader

@@ -647,13 +647,13 @@ _RelocatesAdd(const Value& arg1, const Value& arg2,
     SdfPath srcPath(srcStr);
     SdfPath targetPath(targetStr);
 
-    if (!srcPath.IsPrimPath()) {
-        Err(context, "'%s' is not a valid prim path",
+    if (!SdfSchema::IsValidRelocatesPath(srcPath)) {
+        Err(context, "'%s' is not a valid relocates path",
             srcStr.c_str());
         return;
     }
-    if (!targetPath.IsPrimPath()) {
-        Err(context, "'%s' is not a valid prim path",
+    if (!SdfSchema::IsValidRelocatesPath(targetPath)) {
+        Err(context, "'%s' is not a valid relocates path",
             targetStr.c_str());
         return;
     }
@@ -6513,7 +6513,7 @@ Sdf_ParseLayer(
                 TRACE_SCOPE("textFileFormatYyParse");
                 status = textFileFormatYyparse(&context);
                 *hints = context.layerHints;
-            } catch (boost::bad_get) {
+            } catch (boost::bad_get const &) {
                 TF_CODING_ERROR("Bad boost:get<T>() in layer parser.");
                 Err(&context, "Internal layer parser error.");
             }
@@ -6563,7 +6563,7 @@ Sdf_ParseLayerFromString(
         TRACE_SCOPE("textFileFormatYyParse");
         status = textFileFormatYyparse(&context);
         *hints = context.layerHints;
-    } catch (boost::bad_get) {
+    } catch (boost::bad_get const &) {
         TF_CODING_ERROR("Bad boost:get<T>() in layer parser.");
         Err(&context, "Internal layer parser error.");
     }

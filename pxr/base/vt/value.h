@@ -246,6 +246,7 @@ class VtValue
     protected:
         constexpr _TypeInfo(const std::type_info &ti,
                             const std::type_info &elementTi,
+                            int knownTypeIndex,
                             bool isArray,
                             bool isHashable,
                             bool isProxy,
@@ -271,6 +272,7 @@ class VtValue
                             _GetProxiedAsVtValueFunc getProxiedAsVtValue)
             : typeInfo(ti)
             , elementTypeInfo(elementTi)
+            , knownTypeIndex(knownTypeIndex)
             , isProxy(isProxy)
             , isArray(isArray)
             , isHashable(isHashable)
@@ -363,6 +365,7 @@ class VtValue
 
         const std::type_info &typeInfo;
         const std::type_info &elementTypeInfo;
+        int knownTypeIndex;
         bool isProxy;
         bool isArray;
         bool isHashable;
@@ -581,6 +584,7 @@ class VtValue
         constexpr _TypeInfoImpl()
             : _TypeInfo(typeid(T),
                         _ArrayHelper<T>::GetElementTypeid(),
+                        Vt_KnownValueTypeDetail::GetIndex<T>(),
                         VtIsArray<T>::value,
                         VtIsHashable<T>(),
                         IsProxy,
@@ -1070,6 +1074,18 @@ public:
     /// Return the type name of the held typeid.
     VT_API std::string GetTypeName() const;
 
+    /// Return VtKnownValueTypeIndex<T> for the held type T.  If this value
+    /// holds a proxy type, resolve the proxy and return the proxied type's
+    /// index.  If this value is empty or holds a type that is not 'known',
+    /// return -1.
+    int GetKnownValueTypeIndex() const {
+        if (ARCH_UNLIKELY(_IsProxy())) {
+            return _info->GetProxiedAsVtValue(
+                _storage).GetKnownValueTypeIndex();
+        }
+        return _info.GetLiteral() ? _info->knownTypeIndex : -1;
+    }
+
     /// Returns a const reference to the held object if the held object
     /// is of type \a T.  Invokes undefined behavior otherwise.  This is the
     /// fastest \a Get() method to use after a successful \a IsHolding() check.
@@ -1342,10 +1358,18 @@ private:
     }
 
     template <class T>
-    inline bool _TypeIs() const {
+    inline std::enable_if_t<VtIsKnownValueType_Workaround<T>::value, bool>
+    _TypeIs() const {
+        return _info->knownTypeIndex == VtGetKnownValueTypeIndex<T>() ||
+            ARCH_UNLIKELY(_IsProxy() && _TypeIsImpl(typeid(T)));
+    }
+
+    template <class T>
+    inline std::enable_if_t<!VtIsKnownValueType_Workaround<T>::value, bool>
+    _TypeIs() const {
         std::type_info const &t = typeid(T);
-        bool cmp = TfSafeTypeCompare(_info->typeInfo, t);
-        return ARCH_UNLIKELY(_IsProxy() && !cmp) ? _TypeIsImpl(t) : cmp;
+        return TfSafeTypeCompare(_info->typeInfo, t) ||
+            ARCH_UNLIKELY(_IsProxy() && _TypeIsImpl(t));
     }
 
     VT_API bool _TypeIsImpl(std::type_info const &queriedType) const;

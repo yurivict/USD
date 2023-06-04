@@ -56,11 +56,6 @@ class TestUsdView(Usdviewq.Launcher):
         # environment for our test scripts.
         arg_parse_result.defaultSettings = True
         super(TestUsdView, self).ValidateOptions(arg_parse_result)
-
-        # Further, we ensure usdview won't try to create any state directory
-        # to save its state, as that would be bad for running multiple tests
-        # in parallel
-        os.environ['PXR_USDVIEW_SUPPRESS_STATE_SAVING'] = "1"
         
         self.__LaunchProcess(arg_parse_result)
 
@@ -123,11 +118,8 @@ class TestUsdView(Usdviewq.Launcher):
                     'File: ' + filePath + '\n'
                     'Error: %s')
 
-        if sys.version_info.major >= 3:
-            (args, varargs, keywords, defaults, _, _, _) = \
-                                               inspect.getfullargspec(callBack)
-        else:
-            (args, varargs, keywords, defaults) = inspect.getargspec(callBack)
+        (args, varargs, keywords, defaults, _, _, _) = \
+                                           inspect.getfullargspec(callBack)
 
         assert not varargs, errorMsg % 'Varargs are disallowed'
         assert not keywords, errorMsg % 'Kwargs are disallowed'

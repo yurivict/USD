@@ -122,7 +122,7 @@ getitem_slice(VtArray<T> const &self, slice idx)
         result[i] = *range.start;
         return object(result);
     }
-    catch (std::invalid_argument) {
+    catch (std::invalid_argument const &) {
         return object();
     }
 }
@@ -180,7 +180,7 @@ setArraySlice(VtArray<T> &self, slice idx, object value, bool tile = false)
         T* data = self.data();
         range = idx.get_indices(data, data + self.size());
     }
-    catch (std::invalid_argument) {
+    catch (std::invalid_argument const &) {
         // Do nothing
         return;
     }
@@ -524,19 +524,6 @@ void VtWrapArray()
 #endif
 
         ;
-
-#if PY_MAJOR_VERSION == 2
-    // The above generates bindings for scalar division of arrays, but we
-    // need to explicitly add bindings for __truediv__ and __rtruediv__
-    // in Python 2 to support "from __future__ import division".
-    if (PyObject_HasAttrString(selfCls.ptr(), "__div__")) {
-        selfCls.attr("__truediv__") = selfCls.attr("__div__");
-    }
-
-    if (PyObject_HasAttrString(selfCls.ptr(), "__rdiv__")) {
-        selfCls.attr("__rtruediv__") = selfCls.attr("__rdiv__");
-    }
-#endif
 
 #define WRITE(z, n, data) BOOST_PP_COMMA_IF(n) data
 #define VtCat_DEF(z, n, unused) \

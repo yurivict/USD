@@ -31,6 +31,8 @@
 #include "pxr/usdImaging/usdImaging/dataSourcePrim.h"
 #include "pxr/usdImaging/usdImaging/dataSourceStageGlobals.h"
 
+#include "pxr/usd/usdShade/connectableAPI.h"
+
 #include <tbb/concurrent_unordered_map.h>
 
 PXR_NAMESPACE_OPEN_SCOPE
@@ -46,16 +48,22 @@ class UsdImagingDataSourceMaterial : public HdContainerDataSource
 public:
     HD_DECLARE_DATASOURCE(UsdImagingDataSourceMaterial);
 
-    bool Has(const TfToken & name) override;
     TfTokenVector GetNames() override;
     HdDataSourceBaseHandle Get(const TfToken &name) override;
 
     ~UsdImagingDataSourceMaterial();
 
 private:
+
+    /// If \p fixedTerminalName is specified, the provided \p usdPrim will be
+    /// treated as the terminal shader node in the graph rather than as a
+    /// material (with relationships to the prims serving as terminal shader
+    /// nodes). This is relevant for light and light filter cases.
     UsdImagingDataSourceMaterial(
         UsdPrim usdPrim,
-        const UsdImagingDataSourceStageGlobals &stageGlobals);
+        const UsdImagingDataSourceStageGlobals &stageGlobals,
+        const TfToken &fixedTerminalName = TfToken()
+        );
 
 
 private:
@@ -67,6 +75,8 @@ private:
     using _ContextMap = tbb::concurrent_unordered_map<
         TfToken, HdDataSourceBaseHandle, TfToken::HashFunctor>;
 
+
+    TfToken _fixedTerminalName;
     _ContextMap _networks;
 };
 

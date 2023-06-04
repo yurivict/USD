@@ -189,6 +189,12 @@ and :usda:`opacity`.
   Expects normal in tangent space [(-1,-1,-1), (1,1,1)]. This means your texture
   reader implementation should provide data to this node that is properly scaled
   and ready to be consumed as a tangent space normal.
+  If the texture has 8 bits per component, then scale and bias must be adjusted 
+  to be (2.0, 2.0, 2.0, 1.0) and (-1, -1, -1, 0) respectively in order to 
+  satisfy tangent space requirements. Normal map data is commonly expected to be 
+  linearly encoded. However, many image-writing tools automatically set the 
+  profile of three-channel, 8-bit images to SRGB. To prevent an unwanted 
+  transformation, the sourceColorSpace must also be set to "raw".
 
 * **displacement - float - 0.0** 
 
@@ -309,7 +315,15 @@ typeName information that may be useful to a renderer or shading system.
            doc = """Expects normal in tangent space [(-1,-1,-1), (1,1,1)]
                This means your texture reader implementation should provide
                data to this node that is properly scaled and ready
-               to be consumed as a tangent space normal."""
+               to be consumed as a tangent space normal.
+               If the texture has 8 bits per component, then scale and bias 
+               must be adjusted to be (2.0, 2.0, 2.0, 1.0) and (-1, -1, -1, 0) 
+               respectively in order to satisfy tangent space requirements. 
+               Normal map data is commonly expected to be linearly encoded. 
+               However, many image-writing tools automatically set the profile 
+               of three-channel, 8-bit images to SRGB. To prevent an unwanted 
+               transformation, the sourceColorSpace must also be set to "raw".
+               """
        )
    
        float inputs:displacement = 0.0 (
@@ -333,10 +347,13 @@ Texture Reader
 Node that can be used to read UV textures, including tiled textures such as Mari
 UDIM's.
 
-.. note:: UDIM Tiling Constraint
+.. note:: UDIM Tiling Constraints
    
-   To keep interchange simple(r) and to aid in efficient processing, **we
-   stipulate a maximum of ten tiles in the U direction** for UDIM.
+   To keep interchange simple(r) and to aid in efficient processing of UDIM
+   textures:
+   
+   * **We stipulate a maximum of ten tiles in the U direction**
+   * **We stipulate that the tiles must be within the range [1001, 1099]**
 
 
 **Node Id**: 
